@@ -1,0 +1,6 @@
+smbus
+sshkeyboard
+numpy
+flask
+picamera2
+libcamera

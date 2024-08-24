@@ -1,0 +1,220 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Raspberry Pi Video Stream</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 0;
+            /* overflow: hidden; */
+        }
+        .control {
+            position: relative;
+            width: 200px;
+            height: 200px;
+            background-color: rgba(0, 0, 255, 0.1);
+            border: 1px solid blue;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            font-size: 2em;
+            color: blue;
+            user-select: none;
+        }
+        .control:hover {
+            background-color: rgba(0, 0, 255, 0.2);
+        }
+        .control.active {
+            background-color: rgba(0, 0, 255, 0.5);
+        }
+        /* #up { top: 0; left: 50%; transform: translateX(-50%); }
+        #down { bottom: 0; left: 50%; transform: translateX(-50%); }
+        #left { top: 50%; left: 0; transform: translateY(-50%); }
+        #right { top: 50%; right: 0; transform: translateY(-50%); } */
+    </style>
+</head>
+<body>
+    <h1 align="center">Raspberry Pi Video Stream</h1>
+    <!-- <video src="/cam" id="cam" autoplay playsinline></video> -->
+    <table>
+        <tr>
+            <!-- <td><img src="/cam"></td> -->
+            <td>
+                <table>
+                    <tr>
+                        <td></td>
+                        <td><div id="up" class="control">↑</div></td>
+                        <td></td>
+                    </tr>
+                    <tr>
+                        <td><div id="left" class="control">←</div></td>
+                        <td><div id="down" class="control">↓</div></td>
+                        <td><div id="right" class="control">→</div></td>
+                    </tr>
+                </table>
+            </td>
+        </tr>
+        <tr>
+            <td colspan="2" align="center">
+                <div class="key-status" id="command-status" style="font-size: 1.5em; color: blue;">Command: stop</div>
+            </td>
+        </tr>
+    </table>
+    
+    <script src="//cdnjs.cloudflare.com/ajax/libs/socket.io/4.0.0/socket.io.js"></script>
+    <script type="text/javascript">
+        var socket = io.connect(location.protocol + '//' + document.domain + ':' + location.port);
+        window.onbeforeunload = function() {
+            socket.close();
+        };
+    </script>
+    <script>
+        const controls = {
+            up: document.getElementById('up'),
+            down: document.getElementById('down'),
+            left: document.getElementById('left'),
+            right: document.getElementById('right')
+        };
+
+        const keysPressed = {
+            up: false,
+            down: false,
+            left: false,
+            right: false
+        };
+
+        const keyCombinationToCommand = [
+            { keys: ['left', 'up'], command: 'upleft' },
+            { keys: ['right', 'up'], command: 'upright' },
+            { keys: ['down', 'left'], command: 'downleft' },
+            { keys: ['down', 'right'], command: 'downright' },
+            { keys: ['up'], command: 'up' },
+            { keys: ['down'], command: 'down' },
+            { keys: ['left'], command: 'left' },
+            { keys: ['right'], command: 'right' },
+            { keys: [], command: 'stop' }
+        ];
+
+        let lastCommand = 'stop';
+
+        const updateCommandStatus = () => {
+            const pressedKeys = Object.keys(keysPressed).filter(key => keysPressed[key]);
+            const command = findCommand(pressedKeys);
+
+            if (command !== lastCommand) {
+                lastCommand = command;
+                document.getElementById('command-status').textContent = `Command: ${command}`;
+                sendCommand(command);
+            }
+        };
+
+        const findCommand = (pressedKeys) => {
+            const sortedKeys = [...pressedKeys].sort();
+
+            for (const entry of keyCombinationToCommand) {
+                const sortedEntryKeys = [...entry.keys].sort();
+                if (sortedEntryKeys.length === sortedKeys.length &&
+                    sortedEntryKeys.every((key, index) => key === sortedKeys[index])) {
+                    return entry.command;
+                }
+            }
+            return 'unknown';
+        };
+
+        const sendCommand = (command) => {
+            fetch('http://192.168.2.40:5000/command', {  // Replace YOUR_SERVER_IP with the actual IP address of the server
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ command: command })
+            })
+            .then(response => response.json())
+            .then(data => {
+                console.log('Success:', data);
+            })
+            .catch((error) => {
+                console.error('Error:', error);
+            });
+        };
+
+        // Touch event handlers
+        const handleTouchStart = (event) => {
+            const control = event.target;
+            keysPressed[control.id] = true;
+            control.classList.add('active');
+            updateCommandStatus();
+        };
+
+        const handleTouchEnd = (event) => {
+            const control = event.target;
+            keysPressed[control.id] = false;
+            control.classList.remove('active');
+            updateCommandStatus();
+        };
+
+        // Add touch event listeners
+        for (let key in controls) {
+            controls[key].addEventListener('touchstart', handleTouchStart);
+            controls[key].addEventListener('touchend', handleTouchEnd);
+        }
+
+        // Prevent scrolling on touch move
+        document.addEventListener('touchmove', (event) => {
+            event.preventDefault();
+        }, { passive: false });
+
+        // Keyboard event handlers
+        document.addEventListener('keydown', (event) => {
+            switch(event.key) {
+                case 'ArrowUp':
+                    keysPressed.up = true;
+                    controls.up.classList.add('active');
+                    break;
+                case 'ArrowDown':
+                    keysPressed.down = true;
+                    controls.down.classList.add('active');
+                    break;
+                case 'ArrowLeft':
+                    keysPressed.left = true;
+                    controls.left.classList.add('active');
+                    break;
+                case 'ArrowRight':
+                    keysPressed.right = true;
+                    controls.right.classList.add('active');
+                    break;
+                default:
+                    return;
+            }
+            updateCommandStatus();
+        });
+
+        document.addEventListener('keyup', (event) => {
+            switch(event.key) {
+                case 'ArrowUp':
+                    keysPressed.up = false;
+                    controls.up.classList.remove('active');
+                    break;
+                case 'ArrowDown':
+                    keysPressed.down = false;
+                    controls.down.classList.remove('active');
+                    break;
+                case 'ArrowLeft':
+                    keysPressed.left = false;
+                    controls.left.classList.remove('active');
+                    break;
+                case 'ArrowRight':
+                    keysPressed.right = false;
+                    controls.right.classList.remove('active');
+                    break;
+                default:
+                    return;
+            }
+            updateCommandStatus();
+        });
+    </script>
+</body>
+</html>
