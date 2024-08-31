@@ -16,10 +16,6 @@ import threading
 # Init min, max and angles
 SERVO_MIN = 520
 SERVO_MAX = 2500
-ANGLES = [0] *181
-angle_step = (SERVO_MAX - SERVO_MIN) / 180
-for i in range(0, 181):
-    ANGLES[i] = SERVO_MIN + (i*angle_step)
 
 
 class Engine:
@@ -73,18 +69,27 @@ class TTMotor:
 class Servo:
     def __init__(self, address, pwm, start_angle=90):
         self.address = address
+        self.angle_map = [0] * 181
         self.angle = None
+        self.min_angle = SERVO_MIN
+        self.max_angle = SERVO_MAX
         self.pwm = pwm
         self.move = True
         self.step = 1
         self.sleep = 0.01
         self.thread = None
 
+        self.init_angles()
         self.set_angle(start_angle)
     
+    def init_angles():
+        angle_step = (self.max_angle - self.min_angle) / 180
+        for i in range(0, 181):
+            self.angle_map[i] = self.max_angle + (i*angle_step)
+
     def set_angle(self, angle):
         # Ignores the self.moving variable
-        self.pwm.setServoPulse(self.address, ANGLES[angle])
+        self.pwm.setServoPulse(self.address, self.angle_map[angle])
         self.angle = angle
 
     def move_towards(self, target_angle):

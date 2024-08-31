@@ -1,5 +1,5 @@
 # Custom libraries
-# from library.motor_control import Motor
+from library.engine import Engine
 
 # Web server imports
 from flask import Flask, Response, send_file, request, jsonify
@@ -16,11 +16,13 @@ from datetime import datetime
 import threading
 
 # Init Web app
+print("Initializing web app...")
 app = Flask(__name__)
 CORS(app, resource={r"/*": {"origin": "*"}})
 socketio = SocketIO(app)
 
 # Init Camera
+print("Starting PiCamera module...")
 picam2 = Picamera2()
 picam2.configure(picam2.create_video_configuration(main={"size": (640, 480)}))
 picam2.set_controls({"AfMode":controls.AfModeEnum.Continuous})
@@ -31,11 +33,12 @@ streaming = False
 lock = threading.Lock()
 
 # Init Motor information
-# motor = Motor()
+print("Starting Engine...")
+engine = Engine()
 motor_states = [0, 0]
 servo_states = [0, 0]
 
-motor_commands = {
+motor_commands_to_state = {
     'up': [1, 1],
     'down': [-1, -1],
     'left': [-1, 1],
@@ -47,7 +50,7 @@ motor_commands = {
     'stop': [0, 0],
 }
 
-sevo_commands = {
+servo_commands_to_state = {
     'up': [1, 0],
     'down': [-1, 0],
     'left': [0, 1],
@@ -61,9 +64,9 @@ sevo_commands = {
 
 servo_keys = {
     'ArrowUp': False,
+    'ArrowLeft': False,
     'ArrowDown': False,
     'ArrowRight': False,
-    'ArrowLeft': False,
 }
 
 motor_keys = {
@@ -79,8 +82,8 @@ key_to_command_map = {
     (False, False, False, True) : 'right',
     (False, False, True, False) : 'down',
     (False, False, True, True) : 'downright',
-    (False, True, False, False) : 'right',
-    (False, True, True, False) : 'downright',
+    (False, True, False, False) : 'left',
+    (False, True, True, False) : 'downleft',
     (True, False, False, False) : 'up',
     (True, False, False, True) : 'upright',
     (True, True, False, False) : 'upleft', 
@@ -117,10 +120,10 @@ def update_motor_states():
     return motor_states
 
 
-def update_servo_states():
-    # global servo_states
-    # servo_states = servo_commands.get(command, servo_states)
-    # print(f"Updated servo states: {servo_states}")
+def update_servo_states(command):
+    global servo_states
+    servo_states = servo_commands_to_state.get(command, servo_states)
+    print(f"Updated servo states: {servo_states}")
 
     return servo_states
 
@@ -173,15 +176,81 @@ def add_text_overlay(frame):
     return frame
 
 
-@app.route('/motor', methods=['POST'])
-def motor_command():
-    data = request.get_json()
-    command = data.get('command')
-    if command:
-        updated_states = update_motor_states(command)
-        return jsonify({'status': 'success', 'motor_states': updated_states})
+@app.route('/rpi_batt', methods=['GET', 'OPTIONS'])
+def rpi_batt():
+    if request.method == 'OPTIONS':
+        response = jsonify({'message': 'This is an OPTIONS response'})
+        response.headers['Allow'] = 'OPTIONS, GET'
+        return response
     else:
-        return jsonify({'status': 'error', 'message': 'Invalid command'}), 400
+        return jsonify({'value': '?'})
+
+@app.route('/cpu_temp', methods=['GET', 'OPTIONS'])
+def cpu_temp():
+    if request.method == 'OPTIONS':
+        response = jsonify({'message': 'This is an OPTIONS response'})
+        response.headers['Allow'] = 'OPTIONS, GET'
+        return response
+    else:
+        return jsonify({'value': get_cpu_temperature()})
+
+
+# Request Data
+# { 'servo': <x or y> }
+@app.route('/get_servo_info', method=['POST', 'OPTIONS'])
+def get_servo_info():
+    if request.method == 'OPTIONS':
+        response = jsonify({'message': 'This is an OPTIONS response'})
+        response.headers['Allow'] = 'OPTIONS, POST'
+        return response
+    else:
+        data = request.get_json()
+        servo = data.get('servo')
+        info = {
+            'servo_min': engine.servos[servo].min_angle,
+            'servo_max': engine.servos[servo].max_angle,
+            'angle': engine.servos[servo].angle,
+        }
+        return jsonify(info)
+
+
+# Request Data
+# { 'servo': <x or y>, 'key': <config key to set>, 'value': <value> }
+@app.route('/set_servo_config', method=['POST', 'OPTIONS'])
+def set_servo_info():
+    if request.method == 'OPTIONS':
+        response = jsonify({'message': 'This is an OPTIONS response'})
+        response.headers['Allow'] = 'OPTIONS, POST'
+        return response
+    else:
+        data = request.get_json()
+        servo = data.get('servo')
+        config_key = data.get('key')
+        config_value = data.get('value')
+        if config_key == 'min_angle':
+            engine.servos[servo].min_angle = config_value
+        elif config_key == 'max_angle':
+            engine.servos[servo].max_angle = config_value
+        else:
+            return jsonify({'status': 'error', 'message': 'Invalid config'}), 400
+
+
+
+@app.route('/motor', methods=['POST', 'OPTIONS'])
+def motor_command():
+    if request.method == 'OPTIONS':
+        response = jsonify({'message': 'This is an OPTIONS response'})
+        response.headers['Allow'] = 'OPTIONS, POST'
+        return response
+    else:
+        data = request.get_json()
+        command = data.get('command')
+        if command:
+            updated_states = update_motor_states(command)
+            return jsonify({'status': 'success', 'motor_states': updated_states})
+        else:
+            return jsonify({'status': 'error', 'message': 'Invalid command'}), 400
+
 
 
 @app.route('/servo', methods=['POST'])
@@ -201,6 +270,8 @@ def add_command():
     key = data.get('key')
     if key in servo_keys:
         print(f'Received arrow key : {key}')
+        servo_keys[key] = True
+        update_servo_states(key_to_command_map[tuple(servo_keys.values())])
         return jsonify({'status': 'success', 'servo_states': servo_states})
     elif key in motor_keys:
         print(f'Received Motor key : {key}')
@@ -215,6 +286,8 @@ def remove_command():
     key = data.get('key')
     if key in servo_keys:
         print(f'Received delete arrow key : {key}')
+        servo_keys[key] = False
+        update_servo_states(key_to_command_map[tuple(servo_keys.values())])
         return jsonify({'status': 'success', 'servo_states': servo_states})
     elif key in motor_keys:
         print(f'Received deleteMotor key : {key}')
@@ -260,4 +333,5 @@ def handle_disconnect():
 
 
 if __name__ == '__main__':
+    print("Starting Web Application...")
     app.run(host='0.0.0.0', port=5000)
