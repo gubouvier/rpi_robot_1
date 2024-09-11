@@ -82,10 +82,10 @@ class Servo:
         self.init_angles()
         self.set_angle(start_angle)
     
-    def init_angles():
+    def init_angles(self):
         angle_step = (self.max_angle - self.min_angle) / 180
         for i in range(0, 181):
-            self.angle_map[i] = self.max_angle + (i*angle_step)
+            self.angle_map[i] = self.min_angle + (i*angle_step)
 
     def set_angle(self, angle):
         # Ignores the self.moving variable

@@ -197,7 +197,7 @@ def cpu_temp():
 
 # Request Data
 # { 'servo': <x or y> }
-@app.route('/get_servo_info', method=['POST', 'OPTIONS'])
+@app.route('/get_servo_info', methods=['POST', 'OPTIONS'])
 def get_servo_info():
     if request.method == 'OPTIONS':
         response = jsonify({'message': 'This is an OPTIONS response'})
@@ -216,7 +216,7 @@ def get_servo_info():
 
 # Request Data
 # { 'servo': <x or y>, 'key': <config key to set>, 'value': <value> }
-@app.route('/set_servo_config', method=['POST', 'OPTIONS'])
+@app.route('/set_servo_config', methods=['POST', 'OPTIONS'])
 def set_servo_info():
     if request.method == 'OPTIONS':
         response = jsonify({'message': 'This is an OPTIONS response'})
